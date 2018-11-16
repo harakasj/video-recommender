@@ -152,6 +152,7 @@ def run_test(df, matrix):
         recs, _ = recommend(k, df, matrix)
         for r in recs:
             l = clips.loc[clips['clip_id'] == r]
+            # The "recommend" column is going to be part of the multi-index
             l['recommend'] = k
             rec = rec.append(l)
     rec['recommend'] = rec['recommend'].astype(int)
@@ -192,7 +193,6 @@ def main(cid):
     for r in recs:
         # l = df.loc[r]
         l = clips.loc[clips['clip_id'] == r]
-        # l['recommend'] =
         rec = rec.append(l)
 
     # Return a dictionary (json object)
