@@ -22,13 +22,11 @@ category_map_inv = {y: x for x,y in zip(categories['category_id'],categories['na
 def get_cat_name(n, category_map=category_map):
     return ' '.join([category_map[m].lower().replace(' ', '') for m in n])
 
+
 # Map a category id to a category name
 def get_cat_id(n, category_map=category_map):
     return [category_map_inv[m] for m in n]
 
-
-def get_clip(cid, dataframe):
-    return dataframe.loc[cid]
 
 # Remove stop-words from text
 def remove_stop_words(text):
@@ -42,7 +40,7 @@ def remove_stop_words(text):
 
 def preprocess(df):
     '''
-
+    Do some basic data cleansing
     :param df: dataframe containing clips
     :return: (Dataframe) df
     '''
@@ -89,9 +87,9 @@ def preprocess(df):
 
 def get_word_vector(df):
     '''
-    Returns
-    :param df:
-    :return: (Dataframe) df, (vector) word_vector of the
+    Returns dataframe and word vector
+    :param df: (Dataframe) of clips
+    :return: (Dataframe) df, (vector) word_vector
     '''
     # Corpus is coming from the "words" of each clip - { title, categories, caption }
     corpus = df['words'].tolist()
@@ -137,8 +135,9 @@ def recommend(clip_id, df, matrix):
         recommended.append(list(df.index)[i])
     return recommended, top_10
 
+
 # Output file to results.json
-def run_test(df,matrix):
+def run_test(df, matrix):
     '''
     :param df: (Dataframe) the dataframe
     :param matrix: the word
@@ -150,9 +149,9 @@ def run_test(df,matrix):
 
     rec = pd.DataFrame()
     for k in test_keys:
-        recs, _ = recommend(k, matrix)
+        recs, _ = recommend(k, df, matrix)
         for r in recs:
-            l = df.loc[r]
+            l = clips.loc[clips['clip_id'] == r]
             l['recommend'] = k
             rec = rec.append(l)
     rec['recommend'] = rec['recommend'].astype(int)
@@ -179,17 +178,29 @@ def main(cid):
     # Get word vector
     df, word_vector = get_word_vector(df)
 
-    # Compute cosine similarity
+    # Get similarity matrix
     M = cosine_similarity(word_vector, word_vector)
+
+    # Run test, return results.json
+    # run_test(df, M)
+
 
     # Get recommendations
     recs, _ = recommend(cid, df, M)
-    print(*recs, sep='\n')
+    # print(*recs, sep='\n')
+    rec = pd.DataFrame()
+    for r in recs:
+        # l = df.loc[r]
+        l = clips.loc[clips['clip_id'] == r]
+        # l['recommend'] =
+        rec = rec.append(l)
+
+    # Return a dictionary (json object)
+    rec.set_index('clip_id', inplace=True)
+    results = [{k: rec.values[i][v] for v, k in enumerate(rec.columns)} for i in range(len(rec))]
+    print(results)
+    return results
 
 
 if __name__ == '__main__':
-    # print("\n".join(sys.argv))
-    main(int(sys.argv[1]))
-
-
-
+    results = main(int(sys.argv[1]))
