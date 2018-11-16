@@ -1,3 +1,4 @@
+import sys
 import pandas as pd
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
@@ -10,7 +11,7 @@ clips = pd.read_csv('similar-staff-picks/similar-staff-picks-challenge-clips.csv
 clip_categories = pd.read_csv('similar-staff-picks/similar-staff-picks-challenge-clip-categories.csv')
 categories = pd.read_csv('similar-staff-picks/similar-staff-picks-challenge-categories.csv')
 
-clip_categories['cat'] = [[int(y) for y in x.split(', ')] for x in clip_categories['categories']]
+clip_categories['category'] = [[int(y) for y in x.split(', ')] for x in clip_categories['categories']]
 category_map = {x: y for x,y in zip(categories['category_id'],categories['name'])}
 category_map_inv = {y: x for x,y in zip(categories['category_id'],categories['name'])}
 
@@ -31,10 +32,20 @@ def get_clip(cid, dataframe):
 
 # Remove stop-words from text
 def remove_stop_words(text):
+    '''
+    Strip stop words from text
+    :param text: (string) text for a clip
+    :return: (string) text without stop words
+    '''
     return ' '.join([w for w in word_tokenize(text) if not w in stop_words])
 
 
 def preprocess(df):
+    '''
+
+    :param df: dataframe containing clips
+    :return: (Dataframe) df
+    '''
     df.drop(columns=
             ['Unnamed: 0', 'id', 'created', 'filesize', 'duration',
              'total_comments', 'total_plays', 'total_likes', 'thumbnail'],
@@ -42,9 +53,13 @@ def preprocess(df):
 
     df.set_index('clip_id', inplace=True)
 
+    # Merging relevant columns of dataframes together into one
+
     clip_cat = clip_categories.copy()
+
+    # set index of clip_category
     clip_cat.set_index('clip_id', inplace=True)
-    df['cat'] = clip_cat['cat_name']
+    df['category'] = clip_cat['category_name']
 
     # Make everything lowercase
     df['title'] = df['title'].str.lower()
@@ -58,7 +73,10 @@ def preprocess(df):
     # Fill NaNs with empty string
     df.fillna('', inplace=True)
 
-    columns = ['title', 'cat']
+    columns = ['title', 'category']
+
+    # Join all text fields for each clip in order to extract keywords
+
     df['words'] = ""
     for idx, row in df.iterrows():
         w = ''
@@ -70,6 +88,11 @@ def preprocess(df):
 
 
 def get_word_vector(df):
+    '''
+    Returns
+    :param df:
+    :return: (Dataframe) df, (vector) word_vector of the
+    '''
     # Corpus is coming from the "words" of each clip - { title, categories, caption }
     corpus = df['words'].tolist()
 
@@ -90,7 +113,7 @@ def get_word_vector(df):
         tfidf_sorted = sorted(zip(tfidf_coo.col, tfidf_coo.data),
                               key=lambda x: (x[1], x[0]), reverse=True)
         keywords = ''
-        for idx, score in tfidf_sorted[:10]:
+        for idx, score in tfidf_sorted[:20]:
             keywords = keywords + ' ' + feature_names[idx]
         row['keywords'] = keywords
 
@@ -98,6 +121,12 @@ def get_word_vector(df):
 
 
 def recommend(clip_id, df, matrix):
+    '''
+    :param clip_id: clip_id to recommend similar clips
+    :param df: dataframe containing clips
+    :param matrix: the similarity matrix
+    :return: (list) clip_id of 10 similar videos
+    '''
     indices = pd.Series(df.index)
     recommended = []
     idx = indices[indices == clip_id].index[0]
@@ -106,66 +135,61 @@ def recommend(clip_id, df, matrix):
 
     for i in top_10.index:
         recommended.append(list(df.index)[i])
-    print(top_10)
     return recommended, top_10
 
-def print_results(clip_id):
-    print(clips.loc[clips])
-
-def print_info(cid):
-    vid = df.loc[cid]
-    print(vid['title'] + '\n' + vid['caption'])
-
-
 # Output file to results.json
-def run_test(matrix):
+def run_test(df,matrix):
+    '''
+    :param df: (Dataframe) the dataframe
+    :param matrix: the word
+    :return: (json string) results of top clip recommendations
+    '''
     test_keys = [14434107, 249393804, 71964690, 78106175,
                  228236677, 11374425, 93951774, 35616659,
                  112360862, 116368488]
 
     rec = pd.DataFrame()
-    # label = [test_keys[0]] * 1
     for k in test_keys:
         recs, _ = recommend(k, matrix)
         for r in recs:
-            #         print(k)
             l = df.loc[r]
             l['recommend'] = k
-            #         l.set_index(k)
             rec = rec.append(l)
-
     rec['recommend'] = rec['recommend'].astype(int)
+    # Set multi-index for json output clip_id : recommendation[i]
     results = rec.set_index([rec['recommend'], rec.index]).to_json('results.json', orient='index')
+    return results
 
 
+def main(cid):
+
+    # Map clip category codes to category names
+    clip_categories['category_name'] = clip_categories['category'].map(lambda x: get_cat_name(x))
+
+    # Make a copy of clips to mess around with
+    df = clips.copy()
+
+    # Do some basic data cleansing
+    df = preprocess(df)
+
+    # Strip out stop-words
+    for idx, row in df.iterrows():
+        row['words'] = remove_stop_words(row['words'])
+
+    # Get word vector
+    df, word_vector = get_word_vector(df)
+
+    # Compute cosine similarity
+    M = cosine_similarity(word_vector, word_vector)
+
+    # Get recommendations
+    recs, _ = recommend(cid, df, M)
+    print(*recs, sep='\n')
 
 
-cid=14434107
-
-clip_categories['cat_name'] = clip_categories['cat'].map(lambda x: get_cat_name(x))
-# get_cat_name(clip_categories['cat'].iloc[0])
-df = clips.copy()
-df = preprocess(df)
-for idx, row in df.iterrows():
-    row['words'] = remove_stop_words(row['words'])
-
-df, word_vector = get_word_vector(df)
-
-M = cosine_similarity(word_vector, word_vector)
-
-recs, _ = recommend(cid, df, M)
-print(recs)
-rec = get_clip(cid, df)
-for r in recs:
-    rec = rec.append(get_clip(r, df),ignore_index=True)
-print_info(cid)
-print_info(recs[0])
-
-
-# def main():
-
-# if __name__ == '__main__':
-    # main()
+if __name__ == '__main__':
+    # print("\n".join(sys.argv))
+    main(int(sys.argv[1]))
 
 
 
